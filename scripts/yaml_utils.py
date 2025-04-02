@@ -18,6 +18,7 @@ import yaml
 from yaml.resolver import Resolver
 import os
 import glob
+from copy import deepcopy
 
 
 # Prevent the interpreter from thinking "on" is a boolean
@@ -106,7 +107,7 @@ def _traverse_required(obj):
         return new_list
     elif isinstance(obj, dict):
         # Check if this defines an object
-        if 'type' in obj and obj['type'] == 'object':
+        if True:
             # loop through the properties and check if they have 'required = true'
             required_props = []
             if 'properties' in obj:
@@ -114,6 +115,12 @@ def _traverse_required(obj):
                     if 'required' in v and v['required'] == True:
                         required_props.append(k)
                         del v['required']
+            if 'parameters' in obj:
+                for v in obj['parameters']:
+                    if isinstance(v, dict):
+                        if 'required' in v and v['required'] == True:
+                            required_props.append(v['name'])
+                            del v['required']
 
             if len(required_props) > 0:
                 obj['required'] = required_props
@@ -152,6 +159,74 @@ def _traverse_relative_refs(file, obj):
     else:
         return obj
 
+def resolve_reference(ref_path, root):
+    """Resolve $ref to the actual value within the root."""
+    parts = ref_path.strip('#/').split('/')
+    ref_value = root
+    for part in parts:
+        ref_value = ref_value[part]
+    return deepcopy(ref_value)
+
+def merge_all_of(schema, root):
+    if isinstance(schema, dict):
+        if 'allOf' in schema:
+            if isinstance(schema['allOf'], list) and len(schema['allOf']) == 1:
+                schema = schema['allOf'][0]
+            else:
+                merged = {}
+                for item in schema['allOf']:
+                    resolved = resolve_references(item, root)
+                    merged = deep_merge(merged, resolved)
+                schema = merged
+        else:
+            for key, value in schema.items():
+                schema[key] = merge_all_of(value, root)
+    elif isinstance(schema, list):
+        schema = [merge_all_of(item, root) for item in schema]
+    return schema
+
+def resolve_references(schema, root):
+    """Resolve $ref properties within the schema."""
+    if isinstance(schema, dict) and '$ref' in schema:
+        ref_schema = resolve_reference(schema['$ref'], root)
+        return merge_all_of(ref_schema, root)
+    return merge_all_of(schema, root)
+
+def deep_merge(a, b):
+    """Deep merge two dictionaries."""
+    result = deepcopy(a)
+    if b is None:
+        return result
+    for key, value in b.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = deepcopy(value)
+    return result
+
+def resolve_definitions(paths: List):
+    full_paths = [os.path.join(os.getcwd(), path) for path in paths]
+    files = set()
+    for path in full_paths:
+        if os.path.isfile(path):
+            fileName, fileExt = os.path.splitext(path)
+        if fileExt == '.yaml':
+            files.add(path)
+    else:
+        full_paths += glob.glob(path + '/*')
+    for file in files:
+        with open(file, 'r') as original_file:
+            yaml_content = yaml.safe_load(original_file)
+            resolved_definitions = {
+                key: resolve_references(value, yaml_content)
+                for key, value in yaml_content['definitions'].items()
+            }
+
+            resolved_test_spec = yaml_content.copy()
+            resolved_test_spec['definitions'] = resolved_definitions
+
+        with open(file, 'w') as modified_file:
+            yaml.dump(resolved_test_spec, modified_file, sort_keys=False)
 
 def process_paths(paths: List):
     """
@@ -171,19 +246,19 @@ def process_paths(paths: List):
         else:
             full_paths += glob.glob(path + '/*')
 
-    # Normalized references to all be relative from same location
-    for file in files:
-        yaml_obj = _normalize_relative_refs(file)
-        yaml_out = yaml.dump(yaml_obj)
-        with open(file, "w") as f:
-            f.write(yaml_out)
-
-    # Inline appropriate references in the given paths
-    for file in files:
-        yaml_obj = _process_refs(file)
-        yaml_out = yaml.dump(yaml_obj)
-        with open(file, "w") as f:
-            f.write(yaml_out)
+    # # Normalized references to all be relative from same location
+    # for file in files:
+    #     yaml_obj = _normalize_relative_refs(file)
+    #     yaml_out = yaml.dump(yaml_obj)
+    #     with open(file, "w") as f:
+    #         f.write(yaml_out)
+    #
+    # # Inline appropriate references in the given paths
+    # for file in files:
+    #     yaml_obj = _process_refs(file)
+    #     yaml_out = yaml.dump(yaml_obj)
+    #     with open(file, "w") as f:
+    #         f.write(yaml_out)
 
     # Once references have been inlined, we need to convert from the old "required: true" style for properties to
     # the new "required: [ "a", "b", "c" ]" style
@@ -197,7 +272,11 @@ def process_paths(paths: List):
     for file in files:
         # Handle properties with a truthy value for a name
         replace_text(file, ' on:', ' "on":')
-
+        #   'On':
+        #     name: "on"
+        #     name: onlyPending (don't catch this)
+        replace_text(file, 'On:', '\'On\':')
+        replace_text(file, 'name: on', 'name: "on"')
 
 def rename_array_yaml(paths: List):
     full_paths = [os.path.join(os.getcwd(), path) for path in paths]
