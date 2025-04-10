@@ -18,4 +18,6 @@ def replace_text(filename, to_replace, replacement):
         lines = file.readlines()
     with open(filename, "w") as file:
         for line in lines:
+            if re.search(to_replace, line) and to_replace == r'/array\.yaml':
+                print(f"'{to_replace}' found in line: {line.strip()}")
             file.write(re.sub(to_replace, replacement, line))

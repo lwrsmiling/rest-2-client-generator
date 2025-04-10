@@ -106,24 +106,22 @@ def _traverse_required(obj):
             new_list.append(_traverse_required(li))
         return new_list
     elif isinstance(obj, dict):
-        # Check if this defines an object
-        if True:
-            # loop through the properties and check if they have 'required = true'
-            required_props = []
-            if 'properties' in obj:
-                for k, v in obj['properties'].items():
+        # loop through the properties and check if they have 'required = true'
+        required_props = []
+        if 'properties' in obj:
+            for k, v in obj['properties'].items():
+                if 'required' in v and v['required'] == True:
+                    required_props.append(k)
+                    del v['required']
+        if 'parameters' in obj:
+            for v in obj['parameters']:
+                if isinstance(v, dict):
                     if 'required' in v and v['required'] == True:
-                        required_props.append(k)
-                        del v['required']
-            if 'parameters' in obj:
-                for v in obj['parameters']:
-                    if isinstance(v, dict):
-                        if 'required' in v and v['required'] == True:
-                            required_props.append(v['name'])
-                            del v['required']
+                        if 'x-codegen-request-body-name' in v:
+                            del v['x-codegen-request-body-name']
 
-            if len(required_props) > 0:
-                obj['required'] = required_props
+        if len(required_props) > 0:
+            obj['required'] = required_props
 
         for k, v in obj.items():
             obj[k] = _traverse_required(v)
@@ -171,13 +169,15 @@ def merge_all_of(schema, root):
     if isinstance(schema, dict):
         if 'allOf' in schema:
             if isinstance(schema['allOf'], list) and len(schema['allOf']) == 1:
-                schema = schema['allOf'][0]
+                resolved = schema['allOf'][0]
+                del schema['allOf']
+                merged = deep_merge(schema, resolved)
             else:
                 merged = {}
                 for item in schema['allOf']:
                     resolved = resolve_references(item, root)
                     merged = deep_merge(merged, resolved)
-                schema = merged
+            schema = merged
         else:
             for key, value in schema.items():
                 schema[key] = merge_all_of(value, root)
@@ -214,6 +214,7 @@ def resolve_definitions(paths: List):
             files.add(path)
     else:
         full_paths += glob.glob(path + '/*')
+
     for file in files:
         with open(file, 'r') as original_file:
             yaml_content = yaml.safe_load(original_file)
@@ -227,6 +228,24 @@ def resolve_definitions(paths: List):
 
         with open(file, 'w') as modified_file:
             yaml.dump(resolved_test_spec, modified_file, sort_keys=False)
+
+    # Once references have been inlined, we need to convert from the old "required: true" style for properties to
+    # the new "required:
+    #           -a
+    #           -b
+    #           -c" style
+    for file in files:
+        yaml_obj = _fix_required(file)
+        yaml_out = yaml.dump(yaml_obj)
+        with open(file, "w") as f:
+            f.write(yaml_out)
+
+    # Do any text replacing needed
+    for file in files:
+        # Handle properties with a truthy value for a name
+        replace_text(file, ' on:', ' "on":')
+        replace_text(file, 'On:', '\'On\':')
+        replace_text(file, 'name: on', 'name: "on"')
 
 def process_paths(paths: List):
     """
@@ -246,19 +265,19 @@ def process_paths(paths: List):
         else:
             full_paths += glob.glob(path + '/*')
 
-    # # Normalized references to all be relative from same location
-    # for file in files:
-    #     yaml_obj = _normalize_relative_refs(file)
-    #     yaml_out = yaml.dump(yaml_obj)
-    #     with open(file, "w") as f:
-    #         f.write(yaml_out)
-    #
-    # # Inline appropriate references in the given paths
-    # for file in files:
-    #     yaml_obj = _process_refs(file)
-    #     yaml_out = yaml.dump(yaml_obj)
-    #     with open(file, "w") as f:
-    #         f.write(yaml_out)
+    # Normalized references to all be relative from same location
+    for file in files:
+        yaml_obj = _normalize_relative_refs(file)
+        yaml_out = yaml.dump(yaml_obj)
+        with open(file, "w") as f:
+            f.write(yaml_out)
+
+    # Inline appropriate references in the given paths
+    for file in files:
+        yaml_obj = _process_refs(file)
+        yaml_out = yaml.dump(yaml_obj)
+        with open(file, "w") as f:
+            f.write(yaml_out)
 
     # Once references have been inlined, we need to convert from the old "required: true" style for properties to
     # the new "required: [ "a", "b", "c" ]" style
@@ -272,11 +291,6 @@ def process_paths(paths: List):
     for file in files:
         # Handle properties with a truthy value for a name
         replace_text(file, ' on:', ' "on":')
-        #   'On':
-        #     name: "on"
-        #     name: onlyPending (don't catch this)
-        replace_text(file, 'On:', '\'On\':')
-        replace_text(file, 'name: on', 'name: "on"')
 
 def rename_array_yaml(paths: List):
     full_paths = [os.path.join(os.getcwd(), path) for path in paths]
@@ -295,6 +309,7 @@ def rename_array_yaml(paths: List):
         # Files named "array" cause problems with... arrays
         replace_text(file, r'/array\.yaml', '/arrays.yaml')
         if os.path.basename(file) == 'array.yaml':
+            print(f"found os.path.basename(file) == 'array.yaml'")
             os.rename(file, os.path.join(os.path.dirname(file), 'arrays.yaml'))
 
 

@@ -74,9 +74,9 @@ def build(source: str, build_output_root_dir: str, product: str, language: str, 
     working_dir = tempfile.mkdtemp()
     print("Working in directory: " + working_dir)
 
-    print("Downloading " + swagger_jar_url)
-    swagger_jar = os.path.join(working_dir, 'swagger-codegen-cli.jar')
-    urllib.request.urlretrieve(swagger_jar_url, swagger_jar)
+    # print("Downloading " + swagger_jar_url)
+    swagger_jar = '/Users/waliu/Downloads/swagger-codegen-cli-2.4.28.jar'
+    # urllib.request.urlretrieve(swagger_jar_url, swagger_jar)
 
     source_dir = os.path.join(working_dir, 'source')
     config_dir = os.path.join(working_dir, 'config')
@@ -95,12 +95,14 @@ def build(source: str, build_output_root_dir: str, product: str, language: str, 
 
     print("Fixing references in '#/definitions/")
     yaml_utils.resolve_definitions(glob.glob(os.path.join(source_dir, prefix + '*')))
-    yaml_utils.process_paths(glob.glob(os.path.join(source_dir, prefix + '*')))
 
     print("Renaming files named 'array.yaml'")
     yaml_utils.rename_array_yaml(glob.glob(os.path.join(source_dir, prefix + '*')))
 
     first_version = True
+    print("Making a copy of the modified swagger files")
+    shutil.copy(os.path.join(source_dir, 'FA2.3.spec.yaml'), "/Users/waliu/Desktop/test_spec_modified/")
+    shutil.copy(os.path.join(config_dir, 'config2.3.json'), "/Users/waliu/Desktop/test_spec_modified/")
 
     for version in versions:
         build_output_dir = os.path.join(build_output_root_dir, f"{version}")
