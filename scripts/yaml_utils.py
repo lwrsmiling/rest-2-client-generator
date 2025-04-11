@@ -106,22 +106,24 @@ def _traverse_required(obj):
             new_list.append(_traverse_required(li))
         return new_list
     elif isinstance(obj, dict):
-        # loop through the properties and check if they have 'required = true'
-        required_props = []
-        if 'properties' in obj:
-            for k, v in obj['properties'].items():
-                if 'required' in v and v['required'] == True:
-                    required_props.append(k)
-                    del v['required']
-        if 'parameters' in obj:
+        # Check if this defines an object
+        if 'type' in obj and obj['type'] == 'object':
+            # loop through the properties and check if they have 'required = true'
+            required_props = []
+            if 'properties' in obj:
+                for k, v in obj['properties'].items():
+                    if 'required' in v and v['required'] == True:
+                        required_props.append(k)
+                        del v['required']
+            if len(required_props) > 0:
+                obj['required'] = required_props
+
+        elif 'parameters' in obj:
             for v in obj['parameters']:
                 if isinstance(v, dict):
                     if 'required' in v and v['required'] == True:
                         if 'x-codegen-request-body-name' in v:
                             del v['x-codegen-request-body-name']
-
-        if len(required_props) > 0:
-            obj['required'] = required_props
 
         for k, v in obj.items():
             obj[k] = _traverse_required(v)
