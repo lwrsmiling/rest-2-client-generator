@@ -257,6 +257,29 @@ def process_and_fix_definitions(paths: List):
     else:
         full_paths += glob.glob(path + '/*')
 
+    security_data = {
+        'securityDefinitions': {
+            'OAuth2-Bearer-Token': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'Authorization'
+            },
+            'X-Auth-Token': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'x-auth-token'
+            }
+        },
+        'security': [
+            {
+                'OAuth2-Bearer-Token': []
+            },
+            {
+                'X-Auth-Token': []
+            }
+        ]
+    }
+
     for file in files:
         with open(file, 'r') as original_file:
             yaml_content = yaml.safe_load(original_file)
@@ -267,6 +290,8 @@ def process_and_fix_definitions(paths: List):
 
             resolved_test_spec = yaml_content.copy()
             resolved_test_spec['definitions'] = resolved_definitions
+
+            resolved_test_spec.update(security_data)
 
         with open(file, 'w') as modified_file:
             yaml.dump(resolved_test_spec, modified_file, sort_keys=False)

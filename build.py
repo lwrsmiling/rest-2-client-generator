@@ -84,8 +84,9 @@ def build(source: str, build_output_root_dir: str, product: str, language: str, 
     print("Making a copy of the swagger files")
     shutil.copytree(source, source_dir, dirs_exist_ok=True)
 
-    versions = determine_versions(source_dir, product, versions)
-    versions.sort()
+    # versions = determine_versions(source_dir, product, versions)
+    # versions.sort()
+    versions = ["2.X"]
     print("Generating config for versions: " + str(versions))
 
     os.mkdir(config_dir)
