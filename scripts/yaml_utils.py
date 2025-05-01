@@ -229,9 +229,18 @@ def merge_all_of(schema, root):
 
 def resolve_references(schema, root):
     """Resolve $ref properties within the schema."""
-    if isinstance(schema, dict) and '$ref' in schema:
-        ref_schema = resolve_reference(schema['$ref'], root)
-        return merge_all_of(ref_schema, root)
+    if isinstance(schema, dict):
+        # Check if $ref exists in the dictionary
+        if '$ref' in schema:
+            ref_schema = resolve_reference(schema['$ref'], root)
+            return merge_all_of(ref_schema, root)
+        else:
+            # Recursive call to resolve $ref within nested dictionaries
+            for key, value in schema.items():
+                schema[key] = resolve_references(value, root)
+    elif isinstance(schema, list):
+        # Recursive call to resolve $ref within list elements
+        return [resolve_references(item, root) for item in schema]
     return merge_all_of(schema, root)
 
 def deep_merge(a, b):
